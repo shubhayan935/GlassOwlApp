@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react
 import { GlassOwl } from './glassowl';
 import { Home } from './pages/Home';
 import { About } from './pages/About';
+import { Sessions } from './pages/Sessions';
 
 const Navigation: React.FC = () => {
   const location = useLocation();
@@ -29,12 +30,23 @@ const Navigation: React.FC = () => {
       <Link
         to="/about"
         style={{
+          marginRight: '20px',
           textDecoration: 'none',
           color: location.pathname === '/about' ? '#007bff' : '#666',
           fontWeight: location.pathname === '/about' ? 'bold' : 'normal'
         }}
       >
         About
+      </Link>
+      <Link
+        to="/sessions"
+        style={{
+          textDecoration: 'none',
+          color: location.pathname === '/sessions' ? '#007bff' : '#666',
+          fontWeight: location.pathname === '/sessions' ? 'bold' : 'normal'
+        }}
+      >
+        Sessions
       </Link>
       <span style={{ float: 'right', color: '#999' }}>
         🔴 Recording Active
@@ -50,6 +62,7 @@ const AppContent: React.FC = () => {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/about" element={<About />} />
+        <Route path="/sessions" element={<Sessions />} />
       </Routes>
     </div>
   );

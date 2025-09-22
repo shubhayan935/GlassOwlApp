@@ -134,20 +134,40 @@ export class Recorder {
 
     // Mutation observer
     this.mutationObserver = new MutationObserver((mutations) => {
-      const ops = mutations.map((mutation) => ({
-        type: mutation.type,
-        target: this.getElementPath(mutation.target as Element),
-        addedNodes: Array.from(mutation.addedNodes).map(node => this.serializeNode(node)),
-        removedNodes: Array.from(mutation.removedNodes).map(node => this.serializeNode(node)),
-        attributeName: mutation.attributeName,
-        oldValue: mutation.oldValue,
-      }));
+      try {
+        const ops = mutations.map((mutation) => {
+          try {
+            return {
+              type: mutation.type,
+              target: mutation.target instanceof Element ? this.getElementPath(mutation.target) : 'non-element',
+              addedNodes: Array.from(mutation.addedNodes).map(node => this.serializeNode(node)).filter(n => n),
+              removedNodes: Array.from(mutation.removedNodes).map(node => this.serializeNode(node)).filter(n => n),
+              attributeName: mutation.attributeName,
+              oldValue: mutation.oldValue,
+            };
+          } catch (err) {
+            console.warn('Failed to process mutation:', err);
+            return {
+              type: 'error',
+              target: 'unknown',
+              addedNodes: [],
+              removedNodes: [],
+              attributeName: null,
+              oldValue: null,
+            };
+          }
+        }).filter(op => op);
 
-      this.addEvent({
-        t: 'mut',
-        ops,
-        ts: this.getRelativeTimestamp(),
-      });
+        if (ops.length > 0) {
+          this.addEvent({
+            t: 'mut',
+            ops,
+            ts: this.getRelativeTimestamp(),
+          });
+        }
+      } catch (err) {
+        console.warn('MutationObserver error:', err);
+      }
     });
 
     this.mutationObserver.observe(document, {
@@ -211,17 +231,23 @@ export class Recorder {
   private getElementPath(element: Element): string {
     const path = [];
     let current: Element | null = element;
-    while (current && current !== document.body) {
+
+    // Safety check
+    if (!current || !current.tagName) {
+      return 'unknown';
+    }
+
+    while (current && current.tagName && current !== document.body) {
       let selector = current.tagName.toLowerCase();
       if (current.id) {
         selector += '#' + current.id;
-      } else if (current.className) {
-        selector += '.' + current.className.split(' ').join('.');
+      } else if (current.className && typeof current.className === 'string') {
+        selector += '.' + current.className.split(' ').filter(c => c).join('.');
       }
       path.unshift(selector);
       current = current.parentElement;
     }
-    return path.join(' > ');
+    return path.join(' > ') || 'root';
   }
 
   private serializeNode(node: Node): any {
