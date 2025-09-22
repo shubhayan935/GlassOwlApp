@@ -68,6 +68,196 @@ export const ReplayPlayer: React.FC<ReplayPlayerProps> = ({ session, onClose }) 
   const playbackIntervalRef = useRef<number | null>(null);
   const lastEventIndexRef = useRef(0);
 
+  // Method to apply DOM mutations during replay
+  const applyMutations = useCallback((mutations: any[], document: Document) => {
+    mutations.forEach((mutation, index) => {
+      try {
+        switch (mutation.type) {
+          case 'childList':
+            applyChildListMutation(mutation, document);
+            break;
+          case 'attributes':
+            applyAttributeMutation(mutation, document);
+            break;
+          case 'characterData':
+            applyCharacterDataMutation(mutation, document);
+            break;
+          default:
+            console.log('Unknown mutation type:', mutation.type);
+        }
+      } catch (error) {
+        console.warn(`Failed to apply mutation ${index}:`, error, mutation);
+      }
+    });
+  }, []);
+
+  const applyChildListMutation = useCallback((mutation: any, document: Document) => {
+    try {
+      const targetElement = findElementByPath(mutation.target, document);
+      if (!targetElement) {
+        console.warn('Target element not found for childList mutation:', mutation.target);
+        return;
+      }
+
+      // Handle added nodes
+      if (mutation.addedNodes && mutation.addedNodes.length > 0) {
+        mutation.addedNodes.forEach((nodeData: any) => {
+          const newNode = createNodeFromData(nodeData, document);
+          if (newNode) {
+            targetElement.appendChild(newNode);
+          }
+        });
+      }
+
+      // Handle removed nodes (simplified - just remove by content match)
+      if (mutation.removedNodes && mutation.removedNodes.length > 0) {
+        mutation.removedNodes.forEach((nodeData: any) => {
+          if (nodeData.type === 'text' && nodeData.content) {
+            // Find and remove text nodes with matching content
+            const walker = document.createTreeWalker(
+              targetElement,
+              NodeFilter.SHOW_TEXT
+            );
+            let textNode;
+            while ((textNode = walker.nextNode())) {
+              if (textNode.textContent === nodeData.content) {
+                textNode.parentNode?.removeChild(textNode);
+                break;
+              }
+            }
+          }
+        });
+      }
+    } catch (error) {
+      console.warn('Failed to apply childList mutation:', error);
+    }
+  }, []);
+
+  const applyAttributeMutation = useCallback((mutation: any, document: Document) => {
+    try {
+      const targetElement = findElementByPath(mutation.target, document);
+      if (!targetElement || !(targetElement instanceof Element)) {
+        return;
+      }
+
+      if (mutation.attributeName) {
+        if (mutation.newValue !== undefined) {
+          // Apply the new attribute value
+          if (mutation.newValue === null) {
+            targetElement.removeAttribute(mutation.attributeName);
+          } else {
+            targetElement.setAttribute(mutation.attributeName, mutation.newValue);
+          }
+          console.log(`Applied attribute mutation: ${mutation.attributeName} = ${mutation.newValue}`);
+        } else {
+          console.log('Attribute mutation missing newValue:', mutation.attributeName);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to apply attribute mutation:', error);
+    }
+  }, [findElementByPath]);
+
+  const applyCharacterDataMutation = useCallback((mutation: any, document: Document) => {
+    try {
+      const targetPath = mutation.target;
+
+      // Handle text node paths (format: "element > path::text[index]")
+      if (targetPath && targetPath.includes('::text[')) {
+        const [elementPath, textPart] = targetPath.split('::text[');
+        const textIndex = parseInt(textPart.replace(']', ''));
+
+        const parentElement = findElementByPath(elementPath, document);
+        if (parentElement && !isNaN(textIndex)) {
+          const textNodes = Array.from(parentElement.childNodes).filter(n => n.nodeType === Node.TEXT_NODE);
+          const targetTextNode = textNodes[textIndex] as Text;
+
+          if (targetTextNode && mutation.newValue !== undefined) {
+            targetTextNode.textContent = mutation.newValue;
+            console.log(`Applied text content change: "${mutation.newValue}"`);
+          }
+        }
+      } else {
+        // Fallback: try to find element and update its text content
+        const element = findElementByPath(targetPath, document);
+        if (element && mutation.newValue !== undefined) {
+          // For elements, try to update the first text node or innerText
+          const textNode = Array.from(element.childNodes).find(n => n.nodeType === Node.TEXT_NODE) as Text;
+          if (textNode) {
+            textNode.textContent = mutation.newValue;
+          } else {
+            // If no text node exists, create one
+            element.textContent = mutation.newValue;
+          }
+          console.log(`Applied character data mutation: "${mutation.newValue}"`);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to apply character data mutation:', error);
+    }
+  }, [findElementByPath]);
+
+  const findElementByPath = useCallback((path: string, document: Document): Element | null => {
+    if (!path || path === 'unknown' || path === 'non-element') {
+      return null;
+    }
+
+    try {
+      // Simple path resolution - this could be enhanced
+      const selectors = path.split(' > ');
+      let current: Element | null = document.documentElement;
+
+      for (const selector of selectors) {
+        if (!current) break;
+
+        if (selector.includes('#')) {
+          // ID selector
+          const id = selector.split('#')[1].split('.')[0];
+          current = current.querySelector(`#${id}`);
+        } else if (selector.includes('.')) {
+          // Class selector
+          const parts = selector.split('.');
+          const tag = parts[0];
+          const classes = parts.slice(1).join('.');
+          current = current.querySelector(`${tag}.${classes}`);
+        } else {
+          // Tag selector
+          current = current.querySelector(selector);
+        }
+      }
+
+      return current;
+    } catch (error) {
+      console.warn('Failed to find element by path:', path, error);
+      return null;
+    }
+  }, []);
+
+  const createNodeFromData = useCallback((nodeData: any, document: Document): Node | null => {
+    try {
+      if (nodeData.type === 'element' && nodeData.tag) {
+        const element = document.createElement(nodeData.tag);
+
+        // Apply attributes
+        if (nodeData.attributes) {
+          Object.entries(nodeData.attributes).forEach(([name, value]) => {
+            if (typeof value === 'string') {
+              element.setAttribute(name, value);
+            }
+          });
+        }
+
+        return element;
+      } else if (nodeData.type === 'text' && nodeData.content) {
+        return document.createTextNode(nodeData.content);
+      }
+    } catch (error) {
+      console.warn('Failed to create node from data:', nodeData, error);
+    }
+
+    return null;
+  }, []);
+
   // Extract and sort all events from chunks
   useEffect(() => {
     try {

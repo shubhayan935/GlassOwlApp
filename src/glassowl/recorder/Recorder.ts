@@ -153,14 +153,24 @@ export class Recorder {
       try {
         const ops = mutations.map((mutation) => {
           try {
-            return {
+            const op: any = {
               type: mutation.type,
-              target: mutation.target instanceof Element ? this.getElementPath(mutation.target) : 'non-element',
+              target: mutation.target instanceof Element ? this.getElementPath(mutation.target) :
+                     mutation.target instanceof Text ? this.getTextNodePath(mutation.target) : 'non-element',
               addedNodes: Array.from(mutation.addedNodes).map(node => this.serializeNode(node)).filter(n => n),
               removedNodes: Array.from(mutation.removedNodes).map(node => this.serializeNode(node)).filter(n => n),
               attributeName: mutation.attributeName,
               oldValue: mutation.oldValue,
             };
+
+            // Capture new values for different mutation types
+            if (mutation.type === 'attributes' && mutation.target instanceof Element) {
+              op.newValue = mutation.target.getAttribute(mutation.attributeName!);
+            } else if (mutation.type === 'characterData' && mutation.target instanceof Text) {
+              op.newValue = mutation.target.textContent;
+            }
+
+            return op;
           } catch (err) {
             console.warn('Failed to process mutation:', err);
             return {
@@ -266,6 +276,18 @@ export class Recorder {
     return path.join(' > ') || 'root';
   }
 
+  private getTextNodePath(textNode: Text): string {
+    if (!textNode.parentElement) {
+      return 'orphaned-text';
+    }
+
+    const parentPath = this.getElementPath(textNode.parentElement);
+    const siblings = Array.from(textNode.parentElement.childNodes).filter(n => n.nodeType === Node.TEXT_NODE);
+    const index = siblings.indexOf(textNode);
+
+    return `${parentPath}::text[${index}]`;
+  }
+
   private serializeNode(node: Node): any {
     if (node.nodeType === Node.ELEMENT_NODE) {
       const element = node as Element;
@@ -276,10 +298,19 @@ export class Recorder {
           acc[attr.name] = attr.value;
           return acc;
         }, {} as Record<string, string>),
+        // Capture inner text for elements that might have dynamic content
+        innerText: element.innerText || undefined,
+        path: this.getElementPath(element),
       };
     } else if (node.nodeType === Node.TEXT_NODE) {
       return {
         type: 'text',
+        content: node.textContent,
+        path: this.getTextNodePath(node),
+      };
+    } else if (node.nodeType === Node.COMMENT_NODE) {
+      return {
+        type: 'comment',
         content: node.textContent,
       };
     }
