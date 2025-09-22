@@ -13,15 +13,21 @@ export const GlassOwl: React.FC<GlassOwlProps> = ({
   children,
 }) => {
   const recorderRef = useRef<Recorder | null>(null);
-  const isInitialized = useRef(false);
 
   useEffect(() => {
-    // Prevent double initialization in React StrictMode
-    if (isInitialized.current) return;
-    isInitialized.current = true;
-
     // Only initialize on client side
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined') {
+      console.log('GlassOwl: Skipping initialization - server side');
+      return;
+    }
+
+    // Don't initialize if already recording
+    if (recorderRef.current?.isRecording) {
+      console.log('GlassOwl: Skipping initialization - already recording');
+      return;
+    }
+
+    console.log('GlassOwl: Initializing recorder...');
 
     const config: GlassOwlConfig = {
       apiKey,
@@ -29,10 +35,13 @@ export const GlassOwl: React.FC<GlassOwlProps> = ({
       endpoint,
     };
 
+    console.log('GlassOwl: Config:', config);
+
     recorderRef.current = new Recorder(config);
 
     // Start recording after a short delay to let the page settle
     const timer = setTimeout(() => {
+      console.log('GlassOwl: Starting recorder...');
       recorderRef.current?.start();
     }, 100);
 

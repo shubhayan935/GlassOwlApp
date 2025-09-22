@@ -5,7 +5,7 @@ import { uploadChunk } from '../uploader/Uploader';
 export class Recorder {
   private config: GlassOwlConfig;
   private sessionId: string;
-  private isRecording: boolean = false;
+  private _isRecording: boolean = false;
   private sessionStartTime: number = 0;
   private currentChunkIdx: number = 0;
   private currentEvents: SessionEvent[] = [];
@@ -22,39 +22,67 @@ export class Recorder {
     this.sessionId = this.generateSessionId();
   }
 
+  get isRecording(): boolean {
+    return this._isRecording;
+  }
+
   private generateSessionId(): string {
     return 'session_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
   }
 
   async start(): Promise<void> {
-    if (this.isRecording) return;
+    if (this._isRecording) {
+      console.log('GlassOwl: Already recording, skipping start');
+      return;
+    }
 
-    this.isRecording = true;
-    this.sessionStartTime = Date.now();
-    this.currentChunkIdx = 0;
-    this.currentEvents = [];
+    console.log('GlassOwl: Starting recording...', { sessionId: this.sessionId });
 
-    // Generate DVF and capture initial snapshot
-    await this.initializeSession();
+    try {
+      this._isRecording = true;
+      this.sessionStartTime = Date.now();
+      this.currentChunkIdx = 0;
+      this.currentEvents = [];
 
-    // Start event listeners
-    this.setupEventListeners();
+      // Generate DVF and capture initial snapshot
+      console.log('GlassOwl: Initializing session...');
+      await this.initializeSession();
 
-    // Start chunk timer
-    this.startChunkTimer();
+      // Start event listeners
+      console.log('GlassOwl: Setting up event listeners...');
+      this.setupEventListeners();
 
-    console.log('GlassOwl recording started', { sessionId: this.sessionId, dvf: this.dvf });
+      // Start chunk timer
+      console.log('GlassOwl: Starting chunk timer...');
+      this.startChunkTimer();
+
+      console.log('GlassOwl recording started successfully', { sessionId: this.sessionId, dvf: this.dvf });
+    } catch (error) {
+      console.error('GlassOwl: Failed to start recording:', error);
+      this._isRecording = false;
+    }
   }
 
   private async initializeSession(): Promise<void> {
-    // Generate DVF first
-    this.dvf = await generateDVF();
+    try {
+      // Generate DVF first
+      console.log('GlassOwl: Generating DVF...');
+      this.dvf = await generateDVF();
+      console.log('GlassOwl: DVF generated:', this.dvf);
 
-    // Capture initial DOM snapshot
-    const snapshot = this.captureSnapshot();
+      // Capture initial DOM snapshot
+      console.log('GlassOwl: Capturing initial snapshot...');
+      const snapshot = this.captureSnapshot();
+      console.log('GlassOwl: Snapshot captured, size:', snapshot.html.length);
 
-    // Create keyframe chunk
-    await this.createChunk(true, snapshot);
+      // Create keyframe chunk
+      console.log('GlassOwl: Creating keyframe chunk...');
+      await this.createChunk(true, snapshot);
+      console.log('GlassOwl: Keyframe chunk created');
+    } catch (error) {
+      console.error('GlassOwl: Failed to initialize session:', error);
+      throw error;
+    }
   }
 
   private setupEventListeners(): void {
@@ -182,7 +210,7 @@ export class Recorder {
 
   private getElementPath(element: Element): string {
     const path = [];
-    let current = element;
+    let current: Element | null = element;
     while (current && current !== document.body) {
       let selector = current.tagName.toLowerCase();
       if (current.id) {
@@ -191,7 +219,7 @@ export class Recorder {
         selector += '.' + current.className.split(' ').join('.');
       }
       path.unshift(selector);
-      current = current.parentElement!;
+      current = current.parentElement;
     }
     return path.join(' > ');
   }
@@ -226,7 +254,7 @@ export class Recorder {
 
   private startChunkTimer(): void {
     this.chunkTimer = window.setTimeout(() => {
-      if (this.isRecording) {
+      if (this._isRecording) {
         this.createChunk(false);
         this.startChunkTimer();
       }
@@ -280,9 +308,9 @@ export class Recorder {
   }
 
   stop(): void {
-    if (!this.isRecording) return;
+    if (!this._isRecording) return;
 
-    this.isRecording = false;
+    this._isRecording = false;
 
     if (this.chunkTimer) {
       clearTimeout(this.chunkTimer);

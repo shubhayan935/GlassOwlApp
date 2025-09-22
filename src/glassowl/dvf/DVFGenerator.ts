@@ -1,16 +1,29 @@
 export async function generateDVF(): Promise<string> {
-  const domStructure = extractDOMStructure();
-  const cssSignature = extractCSSSignature();
-  const routeInfo = extractRouteInfo();
+  try {
+    console.log('DVF: Extracting DOM structure...');
+    const domStructure = extractDOMStructure();
 
-  const combined = {
-    dom: domStructure,
-    css: cssSignature,
-    routes: routeInfo,
-  };
+    console.log('DVF: Extracting CSS signature...');
+    const cssSignature = extractCSSSignature();
 
-  const normalized = JSON.stringify(combined, null, 0);
-  return await hashString(normalized);
+    console.log('DVF: Extracting route info...');
+    const routeInfo = extractRouteInfo();
+
+    const combined = {
+      dom: domStructure,
+      css: cssSignature,
+      routes: routeInfo,
+    };
+
+    console.log('DVF: Creating hash from combined data...');
+    const normalized = JSON.stringify(combined, null, 0);
+    const hash = await hashString(normalized);
+    console.log('DVF: Generated hash:', hash);
+    return hash;
+  } catch (error) {
+    console.error('DVF: Failed to generate DVF:', error);
+    throw error;
+  }
 }
 
 function extractDOMStructure(): any {
