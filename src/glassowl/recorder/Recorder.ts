@@ -1,6 +1,7 @@
 import { SessionEvent, SessionChunk, DOMSnapshot, GlassOwlConfig } from '../types';
 import { generateDVF } from '../dvf/DVFGenerator';
 import { uploadChunk } from '../uploader/Uploader';
+import SessionManager from '../SessionManager';
 
 export class Recorder {
   private config: GlassOwlConfig;
@@ -13,22 +14,26 @@ export class Recorder {
   private chunkTimer?: number;
   private lastHash?: string;
   private dvf?: string;
+  private sessionManager: SessionManager;
 
   constructor(config: GlassOwlConfig) {
     this.config = {
       endpoint: 'http://localhost:3001/ingest',
       ...config,
     };
-    this.sessionId = this.generateSessionId();
+    this.sessionManager = SessionManager.getInstance();
+
+    // Get or create persistent session
+    const sessionInfo = this.sessionManager.getOrCreateSession(config.apiKey, config.userId);
+    this.sessionId = sessionInfo.sessionId;
+    this.sessionStartTime = sessionInfo.startedAt;
   }
 
   get isRecording(): boolean {
     return this._isRecording;
   }
 
-  private generateSessionId(): string {
-    return 'session_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
-  }
+  // No longer needed - session ID is managed by SessionManager
 
   async start(): Promise<void> {
     if (this._isRecording) {
@@ -40,8 +45,19 @@ export class Recorder {
 
     try {
       this._isRecording = true;
-      this.sessionStartTime = Date.now();
-      this.currentChunkIdx = 0;
+
+      // Check if we're resuming an existing session
+      const currentSession = this.sessionManager.getCurrentSession();
+      if (currentSession && this.sessionManager.isSessionValid()) {
+        console.log('GlassOwl: Resuming existing session');
+        // For resumed sessions, we need to determine the next chunk index
+        // This would ideally come from the server, but for now we'll continue incrementally
+        this.currentChunkIdx = 0; // Reset for this recording instance
+      } else {
+        console.log('GlassOwl: Starting fresh session');
+        this.currentChunkIdx = 0;
+      }
+
       this.currentEvents = [];
 
       // Generate DVF and capture initial snapshot
@@ -272,6 +288,8 @@ export class Recorder {
 
   private addEvent(event: SessionEvent): void {
     this.currentEvents.push(event);
+    // Update session activity
+    this.sessionManager.updateActivity();
   }
 
   private getRelativeTimestamp(): number {
@@ -333,7 +351,7 @@ export class Recorder {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  stop(): void {
+  stop(endSession: boolean = false): void {
     if (!this._isRecording) return;
 
     this._isRecording = false;
@@ -353,6 +371,12 @@ export class Recorder {
       this.createChunk(false);
     }
 
-    console.log('GlassOwl recording stopped');
+    // Only end the session if explicitly requested (e.g., user leaves site)
+    if (endSession) {
+      this.sessionManager.endSession();
+      console.log('GlassOwl recording stopped and session ended');
+    } else {
+      console.log('GlassOwl recording stopped (session continues)');
+    }
   }
 }

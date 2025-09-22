@@ -54,11 +54,32 @@ export const GlassOwl: React.FC<GlassOwlProps> = ({
     };
   }, [apiKey, userId, endpoint]);
 
-  // Stop recording on unmount
+  // Handle page unload to end session properly
   useEffect(() => {
-    return () => {
+    const handleBeforeUnload = () => {
       if (recorderRef.current) {
-        recorderRef.current.stop();
+        recorderRef.current.stop(true); // End session on page unload
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && recorderRef.current) {
+        recorderRef.current.stop(false); // Just stop recording, don't end session
+      } else if (document.visibilityState === 'visible' && recorderRef.current) {
+        // Restart recording when page becomes visible again
+        recorderRef.current.start();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+
+      if (recorderRef.current) {
+        recorderRef.current.stop(false); // Don't end session on component unmount
         recorderRef.current = null;
       }
     };

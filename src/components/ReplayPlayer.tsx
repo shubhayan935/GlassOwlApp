@@ -211,8 +211,8 @@ export const ReplayPlayer: React.FC<ReplayPlayerProps> = ({ session, onClose }) 
             // Apply DOM mutations
             try {
               if (event.ops && iframe.contentDocument) {
-                // Simple mutation application (can be enhanced)
                 console.log('Replay: Applying', event.ops.length, 'mutations');
+                this.applyMutations(event.ops, iframe.contentDocument);
               }
             } catch (e) {
               console.warn('Failed to apply mutation:', e);
